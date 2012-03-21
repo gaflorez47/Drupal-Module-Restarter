@@ -1,0 +1,5 @@
+name = Module Restarter
+description = Utility to restart / reinstall modules
+core = 7.x
+package = Module Restart
+configure = admin/config/restart

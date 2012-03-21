@@ -1,0 +1,162 @@
+<?php
+
+
+/**
+ * Implements hook_menu().
+ */
+function module_restart_menu() {
+  $items = array();
+
+  $items['admin/config/restart'] = array(
+      'title' => 'Module restarter',
+      'description' => 'Restart your modules',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('module_restart_settings'),
+      'access arguments' => array('administer site configuration'),
+      'type' => MENU_NORMAL_ITEM
+  );
+
+  return $items;
+}
+
+/**
+ * Returns the settings form.
+ */
+function module_restart_settings($form, &$form_state) {
+  $form = array();
+
+  $form['restart'] = array(
+      '#type' => 'radios',
+      '#title' => t('Option'),
+      '#options' => array(true => t('re-enable'), false => t('re-install')),
+      '#default_value' => true,
+  );
+
+  $system_info = system_get_info('module');
+  $packages = array();
+  foreach ($system_info as $info){
+    $pack = $info['package'];
+    $packages[$pack] = $pack;
+    if(!isset($default_package)){
+      $default_package = $pack;
+    }
+  }
+
+//   drupal_set_message(var_export($system_info,1));
+
+  $form['package'] = array(
+      '#title' => t('Package'),
+      '#type' => 'select',
+      '#options' => $packages,
+      '#default_value' => variable_get('module_restarter_package', ''),
+      '#ajax' => array(
+          'callback' => 'ajax_module_restart_autocheckboxes_callback',
+          'wrapper' => 'checkboxes-div',
+          'method' => 'replace',
+          'effect' => 'fade',
+      ),
+
+  );
+
+  $package = isset($form_state['values']['package']) ? $form_state['values']['package']: variable_get('module_restarter_package', $default_package);
+  $modules = module_restart_get_module_list($package);
+
+  $form['modules'] = array(
+      '#type' => 'checkboxes',
+      '#title' => t('Modules'),
+      '#options' => $modules,
+      '#prefix' => '<div id="checkboxes-div">',
+      '#suffix' => '</div>',
+  );
+
+  $form['submit'] = array(
+      '#type' => 'submit',
+      '#value' => 'Submit',
+  );
+
+  return ($form);
+}
+
+function module_restart_get_module_list($package) {
+
+  $system_info = system_get_info('module');
+  $modules = array();
+  foreach ($system_info as $module_name => $module){
+    if(strpos($module['package'], $package) === 0){
+      $modules[$module_name] = $module['name'];
+    }
+  }
+
+  return $modules;
+}
+
+/**
+ * Callback element needs only select the portion of the form to be updated.
+ * Since #ajax['callback'] return can be HTML or a renderable array (or an
+ * array of commands), we can just return a piece of the form.
+ */
+function ajax_module_restart_autocheckboxes_callback($form, &$form_state) {
+  return $form['modules'];
+}
+
+/**
+ * Implements hook_validate().
+ */
+function module_restart_settings_validate($form, $form_state) {
+  $values = $form_state['values'];
+
+}
+
+/**
+ * Implements hook_submit().
+ */
+function module_restart_settings_submit($form, &$form_state){
+  drupal_set_message('Module restart submit');
+  $values = $form_state['values'];
+  variable_set('module_restarter_package', $values['package']);
+
+  $restart = $values['restart'];
+  $modules = $values['modules'];
+
+  //TODO add follow dependants options
+  $dependants = array();
+
+  $operation = array();
+
+  foreach ($modules as $k => $v){
+    if($v){
+      $operation[] = $v;
+      //$dependants = array_merge($dependants, module_resart_get_dependants($v));
+    }
+  }
+
+ // $operation = array_merge($operation, $dependants);
+
+  module_disable($operation,0);
+  if(!$restart){
+    $response = drupal_uninstall_modules($operation,0);
+  }
+
+  if(!$restart){
+    drupal_install_modules($operation);
+  }
+  module_enable($operation,0);
+
+  menu_rebuild();
+
+  $system_info = system_get_info('module');
+
+  drupal_set_message("Restarted: ".implode($operation,', '));
+
+}
+
+function module_resart_get_dependants($module_parent){
+  $data = system_rebuild_module_data();
+  $modules = array();
+  $required = $data[$module_parent]->required_by;
+  foreach ($required as $req_by => $mod){
+     $modules[] = $req_by;
+     $modules = array_merge($modules, module_resart_get_dependants($req_by));
+  }
+  return $modules;
+}
